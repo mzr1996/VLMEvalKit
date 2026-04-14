@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import os
 import os.path as osp
 import re
@@ -16,6 +17,8 @@ from vlmeval.smp import (dump, get_cache_path, get_intermediate_file_path, load,
                          modelscope_flag_set)
 from vlmeval.utils import track_progress_rich
 from .video_base import VideoBaseDataset
+from .utils import build_judge, DEBUG_MESSAGE
+from .utils.videomme import llm_judge_mcq
 
 FAIL_MSG = 'Failed to obtain answer via API.'
 
@@ -325,6 +328,29 @@ def process_results(line):
         index2ans, all_choices = get_multi_choice_info(
             json.loads(line["options"]))
         parsed_pred = parse_multi_choice_response(pred, all_choices, index2ans)
+    else:
+        parsed_pred = parse_open_response(pred)
+
+    return {"id": line["id"], "parsed_pred": parsed_pred}
+
+
+def _process_results_with_llm_judge(line, model):
+    """Process results using LLM-as-Judge for MCQ questions.
+
+    For multiple-choice questions, uses the LLM judge to match the model's
+    response to the correct option. For open-ended questions, falls back to
+    the rule-based parse_open_response.
+    """
+    pred = line['prediction']
+    pred_clean = pred.rpartition('Answer:')[-1].strip()
+
+    question_type = line.get("question_type", "None")
+    if question_type == "multiple-choice":
+        options = json.loads(line["options"])
+        # Determine number of options for the judge prompt
+        n_options = len(options)
+        extracted = llm_judge_mcq(model, line["question"], options, pred, max_options=n_options)
+        parsed_pred = extracted
     else:
         parsed_pred = parse_open_response(pred)
 
@@ -661,8 +687,21 @@ class VideoMMMU(VideoBaseDataset):
         tmp_file = get_intermediate_file_path(eval_file, '_tmp', 'pkl')
         storage = get_intermediate_file_path(eval_file, '_score')
         nproc = judge_kwargs.pop('nproc', 4)
+        use_llm_judge = judge_kwargs.pop('use_llm_judge', True)
 
         if not osp.exists(storage):
+            model = judge_kwargs.get('model', 'exact_matching')
+
+            if model == 'exact_matching':
+                model = None
+            else:
+                model = build_judge(**judge_kwargs)
+                if not model.working():
+                    import warnings
+                    warnings.warn('OPENAI API is not working properly, will use rule-based evaluation')
+                    warnings.warn(DEBUG_MESSAGE)
+                    model = None
+
             data = load(eval_file)
             lt = len(data)
             lines = [data.iloc[i] for i in range(lt)]
@@ -676,14 +715,26 @@ class VideoMMMU(VideoBaseDataset):
             indices = [i for i in indices if i not in ans]
 
             if len(indices):
-                new_results = track_progress_rich(
-                    process_results,
-                    tups,
-                    nproc=nproc,
-                    chunksize=nproc,
-                    keys=indices,
-                    save=tmp_file,
-                )
+                if use_llm_judge and model is not None:
+                    # Use LLM Judge for MCQ questions
+                    new_results = track_progress_rich(
+                        _process_results_with_llm_judge,
+                        [(line, model) for line in [t[0] for t in tups]],
+                        nproc=nproc,
+                        chunksize=nproc,
+                        keys=indices,
+                        save=tmp_file,
+                    )
+                else:
+                    # Use rule-based evaluation (original behavior)
+                    new_results = track_progress_rich(
+                        process_results,
+                        tups,
+                        nproc=nproc,
+                        chunksize=nproc,
+                        keys=indices,
+                        save=tmp_file,
+                    )
                 ans = load(tmp_file)
                 for k, v in zip(indices, new_results):
                     assert k in ans
