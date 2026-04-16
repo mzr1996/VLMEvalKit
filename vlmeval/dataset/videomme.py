@@ -13,6 +13,8 @@ from vlmeval.smp import (dump, get_cache_path, get_file_extension, get_intermedi
 from .utils import DEBUG_MESSAGE, build_judge
 from .video_base import VideoBaseDataset
 
+logger = get_logger(__name__)
+
 FAIL_MSG = 'Failed to obtain answer via API.'
 
 
@@ -257,7 +259,6 @@ Respond with only the letter (A, B, C, or D) of the correct option.
             else:
                 model = build_judge(**judge_kwargs)
                 if not model.working():
-                    logger = get_logger(__name__)
                     logger.warning('OPENAI API is not working properly, will use exact matching for evaluation')
                     logger.warning(DEBUG_MESSAGE)
                     model = None

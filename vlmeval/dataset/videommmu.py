@@ -20,6 +20,8 @@ from .video_base import VideoBaseDataset
 from .utils import build_judge, DEBUG_MESSAGE
 from .utils.videomme import llm_judge_mcq
 
+logger = get_logger(__name__)
+
 FAIL_MSG = 'Failed to obtain answer via API.'
 
 
@@ -696,7 +698,6 @@ class VideoMMMU(VideoBaseDataset):
             else:
                 model = build_judge(**judge_kwargs)
                 if not model.working():
-                    logger = get_logger(__name__)
                     logger.warning('OPENAI API is not working properly, will use rule-based evaluation')
                     logger.warning(DEBUG_MESSAGE)
                     model = None
