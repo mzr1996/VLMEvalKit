@@ -687,7 +687,6 @@ class VideoMMMU(VideoBaseDataset):
         tmp_file = get_intermediate_file_path(eval_file, '_tmp', 'pkl')
         storage = get_intermediate_file_path(eval_file, '_score')
         nproc = judge_kwargs.pop('nproc', 4)
-        use_llm_judge = judge_kwargs.pop('use_llm_judge', True)
 
         if not osp.exists(storage):
             model = judge_kwargs.get('model', 'exact_matching')
@@ -715,7 +714,7 @@ class VideoMMMU(VideoBaseDataset):
             indices = [i for i in indices if i not in ans]
 
             if len(indices):
-                if use_llm_judge and model is not None:
+                if model is not None:
                     # Use LLM Judge for MCQ questions
                     new_results = track_progress_rich(
                         _process_results_with_llm_judge,
@@ -726,7 +725,7 @@ class VideoMMMU(VideoBaseDataset):
                         save=tmp_file,
                     )
                 else:
-                    # Use rule-based evaluation (original behavior)
+                    # Use rule-based evaluation
                     new_results = track_progress_rich(
                         process_results,
                         tups,

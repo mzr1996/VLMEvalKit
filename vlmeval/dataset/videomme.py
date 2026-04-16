@@ -252,7 +252,6 @@ Respond with only the letter (A, B, C, or D) of the correct option.
 
         if not osp.exists(score_file):
             model = judge_kwargs.get('model', 'exact_matching')
-            use_llm_judge = judge_kwargs.pop('use_llm_judge', True)
 
             if model == 'exact_matching':
                 model = None
@@ -272,18 +271,14 @@ Respond with only the letter (A, B, C, or D) of the correct option.
                 ans = data.loc[data['index'] == idx, 'answer'].values[0]
                 pred = str(data.loc[data['index'] == idx, 'prediction'].values[0])
 
-                if use_llm_judge and model is not None:
-                    # Always use LLM Judge for evaluation
+                if model is not None:
+                    # Use LLM Judge for evaluation
                     row = data.loc[data['index'] == idx].iloc[0]
                     question_text = row['question']
                     options = eval(row['candidates'])
                     extracted = llm_judge_mcq(model, question_text, options, pred)
-                elif use_llm_judge and model is None:
-                    # LLM Judge requested but no model available; fall back to regex
-                    regex_result = extract_characters_regex(pred)
-                    extracted = regex_result if regex_result else 'X'
                 else:
-                    # Legacy behavior: regex first, LLM Judge as fallback
+                    # Fallback to regex extraction
                     regex_result = extract_characters_regex(pred)
                     if regex_result == '':
                         extracted = extract_option(
