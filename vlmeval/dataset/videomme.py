@@ -10,6 +10,7 @@ from PIL import Image
 
 from vlmeval.smp import (dump, get_cache_path, get_file_extension, get_intermediate_file_path,
                          get_logger, load, md5, modelscope_flag_set)
+from vlmeval.utils import track_progress_rich
 from .utils import DEBUG_MESSAGE, build_judge
 from .video_base import VideoBaseDataset
 
@@ -37,6 +38,32 @@ def unwrap_hf_pkl(pth, suffix='.mp4'):
         print('The video file has been restored and stored from the pickle file.')
     else:
         print('The video file already exists.')
+
+
+def _evaluate_single(tup):
+    """Evaluate a single VideoMME sample, supporting both LLM Judge and regex extraction."""
+    from .utils.videomme import extract_characters_regex, extract_option, llm_judge_mcq
+
+    line, model = tup
+    pred = str(line['prediction'])
+
+    if model is not None:
+        # Use LLM Judge for evaluation
+        options = eval(line['candidates'])
+        extracted = llm_judge_mcq(model, line['question'], options, pred)
+    else:
+        # Fallback to regex extraction
+        regex_result = extract_characters_regex(pred)
+        if regex_result == '':
+            extracted = extract_option(
+                model,
+                line.to_dict(),
+                'Video-MME'
+            )
+        else:
+            extracted = regex_result
+
+    return {'index': line['index'], 'extracted': extracted}
 
 
 class VideoMME(VideoBaseDataset):
@@ -250,6 +277,7 @@ Respond with only the letter (A, B, C, or D) of the correct option.
         tmp_file = get_intermediate_file_path(eval_file, '_tmp', 'pkl')
         tgt_file = get_intermediate_file_path(eval_file, '_rating', 'json')
         score_file = get_intermediate_file_path(eval_file, '_score')
+        nproc = judge_kwargs.pop('nproc', 4)
 
         if not osp.exists(score_file):
             model = judge_kwargs.get('model', 'exact_matching')
@@ -262,35 +290,38 @@ Respond with only the letter (A, B, C, or D) of the correct option.
                     logger.warning('OPENAI API is not working properly, will use exact matching for evaluation')
                     logger.warning(DEBUG_MESSAGE)
                     model = None
-            res = {} if not osp.exists(tmp_file) else load(tmp_file)
-            res = {k: v for k, v in res.items() if FAIL_MSG not in v}
 
             data = load(eval_file)
             data_un = data[~pd.isna(data['prediction'])]
 
+            lines = [data.iloc[i] for i in range(len(data))]
+            tups = [(line, model) for line in lines]
+            indices = [line['index'] for line in lines]
+
+            ans = {}
+            if osp.exists(tmp_file):
+                ans = load(tmp_file)
+            tups = [x for x, i in zip(tups, indices) if i not in ans]
+            indices = [i for i in indices if i not in ans]
+
+            if len(indices):
+                new_results = track_progress_rich(
+                    _evaluate_single,
+                    tups,
+                    nproc=nproc,
+                    chunksize=nproc,
+                    keys=indices,
+                    save=tmp_file,
+                )
+                ans = load(tmp_file)
+                for k, v in zip(indices, new_results):
+                    assert k in ans
+                    assert ans[k]['index'] == v['index'] and ans[k]['extracted'] == v['extracted']
+
             for idx in data['index']:
-                ans = data.loc[data['index'] == idx, 'answer'].values[0]
-                pred = str(data.loc[data['index'] == idx, 'prediction'].values[0])
-
-                if model is not None:
-                    # Use LLM Judge for evaluation
-                    row = data.loc[data['index'] == idx].iloc[0]
-                    question_text = row['question']
-                    options = eval(row['candidates'])
-                    extracted = llm_judge_mcq(model, question_text, options, pred)
-                else:
-                    # Fallback to regex extraction
-                    regex_result = extract_characters_regex(pred)
-                    if regex_result == '':
-                        extracted = extract_option(
-                            model,
-                            data.loc[data['index'] == idx].to_dict(orient='records')[0],
-                            'Video-MME'
-                        )
-                    else:
-                        extracted = regex_result
-
-                data.loc[data['index'] == idx, 'score'] = int(extracted == ans)
+                ans_str = data.loc[data['index'] == idx, 'answer'].values[0]
+                extracted = ans[idx]['extracted']
+                data.loc[data['index'] == idx, 'score'] = int(extracted == ans_str)
 
             rejected = [x for x in data['score'] if x == -1]
 
