@@ -40,11 +40,9 @@ def unwrap_hf_pkl(pth, suffix='.mp4'):
         print('The video file already exists.')
 
 
-def _evaluate_single(tup):
+def _evaluate_single(line, model):
     """Evaluate a single VideoMME sample, supporting both LLM Judge and regex extraction."""
     from .utils.videomme import extract_characters_regex, extract_option, llm_judge_mcq
-
-    line, model = tup
     pred = str(line['prediction'])
 
     if model is not None:
