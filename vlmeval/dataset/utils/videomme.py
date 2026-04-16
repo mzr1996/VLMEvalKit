@@ -1,9 +1,9 @@
 import re
-import logging
 
 import numpy as np
 
 from vlmeval.dataset.utils.multiple_choice import extract_answer_from_item
+from vlmeval.smp import get_logger
 from vlmeval.smp.file import load
 
 FAIL_MSG = 'Failed to obtain answer via API.'
@@ -287,7 +287,7 @@ def llm_judge_mcq(model, question, options, model_response, max_options=4):
     Returns:
         str: The matched option letter (A, B, C, D, ...) or 'X' if no match.
     """
-    logger = logging.getLogger('Evaluation')
+    logger = get_logger(__name__)
 
     parsed_options = _parse_options_list(options)
     n_options = len(parsed_options)

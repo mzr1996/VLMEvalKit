@@ -1,7 +1,6 @@
 import os
 import os.path as osp
 import pickle
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -10,7 +9,7 @@ from huggingface_hub import snapshot_download
 from PIL import Image
 
 from vlmeval.smp import (dump, get_cache_path, get_file_extension, get_intermediate_file_path,
-                         load, md5, modelscope_flag_set)
+                         get_logger, load, md5, modelscope_flag_set)
 from .utils import DEBUG_MESSAGE, build_judge
 from .video_base import VideoBaseDataset
 
@@ -258,8 +257,9 @@ Respond with only the letter (A, B, C, or D) of the correct option.
             else:
                 model = build_judge(**judge_kwargs)
                 if not model.working():
-                    warnings.warn('OPENAI API is not working properly, will use exact matching for evaluation')
-                    warnings.warn(DEBUG_MESSAGE)
+                    logger = get_logger(__name__)
+                    logger.warning('OPENAI API is not working properly, will use exact matching for evaluation')
+                    logger.warning(DEBUG_MESSAGE)
                     model = None
             res = {} if not osp.exists(tmp_file) else load(tmp_file)
             res = {k: v for k, v in res.items() if FAIL_MSG not in v}

@@ -13,7 +13,7 @@ import portalocker
 from huggingface_hub import snapshot_download
 from PIL import Image
 
-from vlmeval.smp import (dump, get_cache_path, get_intermediate_file_path, load, md5,
+from vlmeval.smp import (dump, get_cache_path, get_intermediate_file_path, get_logger, load, md5,
                          modelscope_flag_set)
 from vlmeval.utils import track_progress_rich
 from .video_base import VideoBaseDataset
@@ -696,9 +696,9 @@ class VideoMMMU(VideoBaseDataset):
             else:
                 model = build_judge(**judge_kwargs)
                 if not model.working():
-                    import warnings
-                    warnings.warn('OPENAI API is not working properly, will use rule-based evaluation')
-                    warnings.warn(DEBUG_MESSAGE)
+                    logger = get_logger(__name__)
+                    logger.warning('OPENAI API is not working properly, will use rule-based evaluation')
+                    logger.warning(DEBUG_MESSAGE)
                     model = None
 
             data = load(eval_file)
